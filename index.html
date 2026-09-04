@@ -8,34 +8,68 @@
   </head>
   <body>
     <div class="app">
+      <div class="doodle doodle-eye" aria-hidden="true">◉‿◉</div>
+      <div class="doodle doodle-note" aria-hidden="true">
+        psst...<br />don't blink!
+      </div>
+      <div class="doodle doodle-arrow" aria-hidden="true">↘</div>
+      <div class="doodle doodle-stars" aria-hidden="true">✦ ☆ ✧</div>
+      <div class="doodle doodle-peek doodle-peek-left" aria-hidden="true">
+        👀
+      </div>
+      <div class="doodle doodle-peek doodle-peek-right" aria-hidden="true">
+        👁?
+      </div>
+      <div class="bg-eye bg-eye-one" aria-hidden="true"><i></i><i></i></div>
+      <div class="bg-eye bg-eye-two" aria-hidden="true"><i></i><i></i></div>
+      <div class="bg-eye bg-eye-three" aria-hidden="true"><i></i><i></i></div>
+      <div class="bg-eye bg-eye-four" aria-hidden="true"><i></i><i></i></div>
+      <div class="bg-eye bg-eye-five" aria-hidden="true"><i></i><i></i></div>
       <header>
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true"></div>
-          <div>
-            <div class="brand-name">KANNUM KANNUM</div>
-            <div class="malayalam">കണ്ണും കണ്ണും</div>
-          </div>
+          <img
+            class="brand-logo"
+            src="gpt-image-2_create_a_funny_doodle_like_logo_with_title_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82-0.jpg"
+            alt="കണ്ണും കണ്ണും cartoon eye logo"
+          />
         </div>
         <div class="live mono">
           <span class="live-dot"></span
           ><span id="connection">SYSTEM READY</span>
         </div>
       </header>
+      <nav class="app-nav" aria-label="Game navigation">
+        <button class="nav-link active" data-view="dashboard">DASHBOARD</button>
+        <button class="nav-link" data-view="play">PLAY</button>
+        <button class="nav-link" data-view="collection">EYE COLLECTION</button>
+        <button class="nav-link" data-view="leaderboard">LEADERBOARD</button>
+        <button class="nav-link" data-view="stats">STATS</button>
+        <button class="nav-link" data-view="history">GAME HISTORY</button>
+        <button class="nav-link login-link" id="login-button">LOGIN</button>
+      </nav>
+      <section class="portal hidden" id="portal" aria-live="polite">
+        <div class="portal-heading">
+          <span class="eyebrow">KANNUM KANNUM / PLAYER BOOK</span>
+          <h2 id="portal-title">DASHBOARD</h2>
+          <span class="portal-scribble">👀 watching...</span>
+        </div>
+        <div class="portal-grid" id="portal-content"></div>
+      </section>
       <main>
         <section class="intro">
           <div class="eyebrow">A gaze endurance game / 001</div>
-          <h1>DON'T<br /><span>LOOK AWAY.</span></h1>
+          <img
+            class="landing-logo"
+            src="gpt-image-2_create_a_funny_doodle_like_logo_with_title_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82-0.jpg"
+            alt="കണ്ണും കണ്ണും cartoon logo"
+          />
+          <div class="subtitle">
+            DON'T LOOK AWAY <span aria-hidden="true">👁</span>
+          </div>
           <p class="intro-copy">
             Your eyes are the controller. Stare into the center eye while the
             computer tries very hard to make you curious.
           </p>
-          <div class="rules">
-            <strong>One rule</strong>
-            <p>
-              The target never moves. The timer and distractions are bait. Blink
-              or look away and the run ends.
-            </p>
-          </div>
           <div class="stats">
             <div class="stat">
               <label class="mono">Best run</label
@@ -71,7 +105,7 @@
             </div>
             <div class="center-message" id="welcome">
               <div>
-                <div class="eyebrow">കണ്ണും കണ്ണും</div>
+                <div class="eyebrow">KANNUM KANNUM</div>
                 <h2>How long can you keep looking?</h2>
                 <p>
                   Camera processing stays in this browser. No video is recorded
@@ -89,19 +123,56 @@
         </section>
       </main>
     </div>
+    <div class="modal hidden" id="login-modal">
+      <div class="modal-card login-card">
+        <div class="eyebrow" id="auth-eyebrow">Player pass</div>
+        <h2 id="auth-title">Who is staring?</h2>
+        <p class="intro-copy" id="auth-copy">
+          Create or sign into a local profile. Passwords never leave this
+          browser.
+        </p>
+        <label class="mono" for="player-name">USERNAME</label
+        ><input
+          class="sketch-input"
+          id="player-name"
+          maxlength="18"
+          placeholder="e.g. Eye-vin"
+        />
+        <label class="mono" for="player-email">EMAIL</label>
+        <input
+          class="sketch-input"
+          id="player-email"
+          type="email"
+          placeholder="you@example.com"
+        />
+        <label class="mono" for="player-password">PASSWORD</label>
+        <input
+          class="sketch-input"
+          id="player-password"
+          type="password"
+          minlength="4"
+          placeholder="4+ characters"
+        />
+        <div class="modal-actions">
+          <button class="primary" id="save-login">CREATE PROFILE</button
+          ><button class="ghost" id="switch-auth">I HAVE AN ACCOUNT</button
+          ><button class="ghost" id="close-login">CANCEL</button>
+        </div>
+      </div>
+    </div>
     <div class="modal hidden" id="style-modal">
       <div class="modal-card">
         <div class="eyebrow">Target selection</div>
         <h2>Choose your watcher.</h2>
         <div class="choices">
           <button class="choice active" data-eye="human">
-            <i class="choice-eye"></i>HUMAN</button
+            <i class="choice-eye"></i>HUMAN <small>LVL 1</small></button
           ><button class="choice" data-eye="cyclops">
-            <i class="choice-eye"></i>CYCLOPS</button
+            <i class="choice-eye"></i>CYCLOPS <small>LVL 2</small></button
           ><button class="choice" data-eye="anime">
-            <i class="choice-eye"></i>ANIME</button
+            <i class="choice-eye"></i>ANIME <small>LVL 3</small></button
           ><button class="choice" data-eye="alien">
-            <i class="choice-eye"></i>ALIEN
+            <i class="choice-eye"></i>ALIEN <small>LVL 5</small>
           </button>
         </div>
         <div class="modal-actions">
@@ -134,6 +205,7 @@
         </div>
       </div>
     </div>
+    <script src="supabase-config.js"></script>
     <script type="module" src="game.js"></script>
   </body>
 </html>

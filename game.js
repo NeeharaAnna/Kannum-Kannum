@@ -2,6 +2,15 @@ import {
   FaceLandmarker,
   FilesetResolver,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
+import {
+  backendEnabled,
+  currentBackendProfile,
+  getBackendLeaderboard,
+  loginBackend,
+  logoutBackend,
+  registerBackend,
+  saveBackendRun,
+} from "./backend.js";
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"),
   video = $("webcam"),
@@ -23,7 +32,10 @@ let landmarker,
   blinks = 0,
   lastDistraction = 0,
   toleranceMs = 1250,
-  debugMode = false;
+  debugMode = false,
+  currentUser = localStorage.getItem("kk-current-user") || "",
+  authMode = "register";
+let remoteProfile = null;
 const messages = [
   "LOOK LEFT.",
   "HEY, WHAT'S THAT?",
@@ -39,42 +51,112 @@ function status(text, color = "var(--muted)") {
   $("status").style.color = color;
 }
 function best() {
-  $("best-score").innerHTML =
-    `${localStorage.getItem("kk-best-score") || 0} <small>sec</small>`;
-  $("best-level").textContent = localStorage.getItem("kk-best-level") || 0;
+  const profile = getProfile();
+  $("best-score").innerHTML = `${profile.bestScore || 0} <small>sec</small>`;
+  $("best-level").textContent = profile.bestLevel || 0;
+}
+function getUsers() {
+  return JSON.parse(localStorage.getItem("kk-users") || "{}");
+}
+function getProfile() {
+  if (remoteProfile) return remoteProfile;
+  const users = getUsers();
+  return (
+    users[currentUser] || {
+      name: currentUser || "Anonymous Eye",
+      password: "",
+      bestScore: 0,
+      bestLevel: 0,
+      history: [],
+    }
+  );
+}
+function saveProfile(profile) {
+  const users = getUsers();
+  users[profile.name] = profile;
+  localStorage.setItem("kk-users", JSON.stringify(users));
+  currentUser = profile.name;
+  localStorage.setItem("kk-current-user", currentUser);
+}
+function getLocalLeaderboard() {
+  return Object.values(getUsers())
+    .map((profile) => ({
+      username: profile.name,
+      best_score: Number(profile.bestScore || 0),
+      best_level: Number(profile.bestLevel || 0),
+    }))
+    .sort(
+      (a, b) =>
+        b.best_score - a.best_score ||
+        b.best_level - a.best_level ||
+        a.username.localeCompare(b.username),
+    )
+    .slice(0, 25);
+}
+function leaderboardList(rows) {
+  if (!rows.length) return "<li>No scores yet. Play a round to join.</li>";
+  return rows
+    .map(
+      (row, index) =>
+        `<li>${index + 1}. ${row.username} — ${Number(row.best_score || 0).toFixed(1)}s · Level ${Number(row.best_level || 0)}</li>`,
+    )
+    .join("");
+}
+function updateAuthButton() {
+  const button = $("login-button");
+  const loggedIn = Boolean(currentUser);
+  button.textContent = loggedIn ? "LOGOUT" : "LOGIN";
+  button.setAttribute("aria-label", loggedIn ? "Log out" : "Log in");
+}
+function requireLogin() {
+  if (currentUser) return true;
+  openAuth("login");
+  return false;
+}
+function openAuth(nextMode = "login") {
+  authMode = nextMode;
+  $("login-modal").classList.remove("hidden");
+  $("auth-title").textContent =
+    nextMode === "login" ? "Welcome back, watcher." : "Who is staring?";
+  $("auth-eyebrow").textContent =
+    nextMode === "login" ? "Player login" : "Create player pass";
+  $("save-login").textContent =
+    nextMode === "login" ? "LOGIN" : "CREATE PROFILE";
+  $("switch-auth").textContent =
+    nextMode === "login" ? "CREATE NEW ACCOUNT" : "I HAVE AN ACCOUNT";
 }
 function rawGaze(result) {
   if (!result.faceLandmarks?.length) return null;
   const face = result.faceLandmarks[0];
   const avg = (ids) =>
     ids.reduce(
-      (p, i) => ({
-        x: p.x + face[i].x / ids.length,
-        y: p.y + face[i].y / ids.length,
+      (point, index) => ({
+        x: point.x + face[index].x / ids.length,
+        y: point.y + face[index].y / ids.length,
       }),
       { x: 0, y: 0 },
     );
-  const leftIris = avg([468, 469, 470, 471, 472]),
-    rightIris = avg([473, 474, 475, 476, 477]);
-  const leftSpan = Math.max(0.01, face[133].x - face[33].x),
-    rightSpan = Math.max(0.01, face[263].x - face[362].x);
+  const leftIris = avg([468, 469, 470, 471, 472]);
+  const rightIris = avg([473, 474, 475, 476, 477]);
+  const leftSpan = Math.max(0.01, face[133].x - face[33].x);
+  const rightSpan = Math.max(0.01, face[263].x - face[362].x);
   const leftCornerMid = {
-      x: (face[33].x + face[133].x) / 2,
-      y: (face[33].y + face[133].y) / 2,
-    },
-    rightCornerMid = {
-      x: (face[362].x + face[263].x) / 2,
-      y: (face[362].y + face[263].y) / 2,
-    };
+    x: (face[33].x + face[133].x) / 2,
+    y: (face[33].y + face[133].y) / 2,
+  };
+  const rightCornerMid = {
+    x: (face[362].x + face[263].x) / 2,
+    y: (face[362].y + face[263].y) / 2,
+  };
   const eyeMid = {
     x: (leftCornerMid.x + rightCornerMid.x) / 2,
     y: (leftCornerMid.y + rightCornerMid.y) / 2,
   };
   const eyeSpan = (leftSpan + rightSpan) / 2;
-  const leftX = (leftIris.x - face[33].x) / leftSpan,
-    rightX = (rightIris.x - face[362].x) / rightSpan;
-  const leftY = (leftIris.y - leftCornerMid.y) / leftSpan,
-    rightY = (rightIris.y - rightCornerMid.y) / rightSpan;
+  const leftX = (leftIris.x - face[33].x) / leftSpan;
+  const rightX = (rightIris.x - face[362].x) / rightSpan;
+  const leftY = (leftIris.y - leftCornerMid.y) / leftSpan;
+  const rightY = (rightIris.y - rightCornerMid.y) / rightSpan;
   const openness =
     ((face[145].y - face[159].y) / leftSpan +
       (face[374].y - face[386].y) / rightSpan) /
@@ -216,10 +298,20 @@ function gameOver(reason) {
   $("zone").classList.add("hidden");
   $("gaze-dot").classList.add("hidden");
   const seconds = (Date.now() - startedAt) / 1000;
-  const old = +(localStorage.getItem("kk-best-score") || 0);
-  const oldLevel = +(localStorage.getItem("kk-best-level") || 0);
-  localStorage.setItem("kk-best-score", Math.max(old, Math.floor(seconds)));
-  localStorage.setItem("kk-best-level", Math.max(oldLevel, level));
+  const profile = getProfile();
+  profile.bestScore = Math.max(profile.bestScore || 0, Math.floor(seconds));
+  profile.bestLevel = Math.max(profile.bestLevel || 0, level);
+  profile.history = profile.history || [];
+  profile.history.unshift({
+    time: seconds,
+    level,
+    reason,
+    date: new Date().toLocaleDateString(),
+  });
+  profile.history = profile.history.slice(0, 12);
+  saveProfile(profile);
+  saveBackendRun({ time: seconds, level, reason }).catch(() => status("SCORE SYNC FAILED", "var(--coral)"));
+  updateEyeLocks();
   best();
   audio(130);
   $("welcome").classList.remove("hidden");
@@ -232,6 +324,151 @@ function gameOver(reason) {
   };
   $("menu").onclick = menu;
 }
+function renderPortal(view) {
+  const profile = getProfile();
+  const name = profile.name || "Anonymous Eye";
+  const history = profile.history || [];
+  const bestScore = profile.bestScore || 0;
+  const bestLevel = profile.bestLevel || 0;
+  const titles = {
+    dashboard: "DASHBOARD",
+    collection: "EYE COLLECTION",
+    leaderboard: "LEADERBOARD",
+    stats: "STATS",
+    history: "GAME HISTORY",
+  };
+  const views = {
+    dashboard: `<div class="portal-card dashboard-welcome"><span class="tiny-eye">👀</span><img class="dashboard-poster" src="gpt-image-2_create_a_funny_doodle_like_logo_with_title_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82-0.jpg" alt="Kannum Kannum poster" /><h3>Hi, ${name}!</h3><p>Your eyes are warmed up. Ready to cause some chaos?</p><button class="primary portal-play" type="button">PLAY NOW →</button></div><div class="portal-card"><h3>Current doodle</h3><p>Best run</p><strong>${bestScore}s</strong><p>Level ${bestLevel} reached. Suspiciously focused.</p></div><div class="portal-card"><h3>Quick links</h3><ul class="portal-list"><li>Collect weird eyes</li><li>Climb the leaderboard</li><li>Prove you can stare</li></ul></div>`,
+    collection: `<div class="portal-card"><span class="tiny-eye">👁</span><h3>Human</h3><p>Classic watcher. Unlocked at level 1.</p></div><div class="portal-card"><span class="tiny-eye">◉</span><h3>Cyclops</h3><p>${bestLevel >= 2 ? "Unlocked! One eye. Zero excuses." : "Locked. Reach level 2."}</p></div><div class="portal-card"><span class="tiny-eye">✦</span><h3>Anime / Alien</h3><p>Anime: level 3. Alien: level 5.</p></div>`,
+    leaderboard: `<div class="portal-card"><h3>Local legends</h3><ol class="portal-list">${leaderboardList(getLocalLeaderboard())}</ol></div><div class="portal-card"><h3>Leaderboard rule</h3><p>These scores are from accounts saved in this browser.</p></div>`,
+    stats: `<div class="portal-card"><h3>Survival time</h3><strong>${bestScore}s</strong><p>Your longest eye contact.</p></div><div class="portal-card"><h3>Best level</h3><strong>${bestLevel}</strong><p>The eye remembers.</p></div><div class="portal-card"><h3>Runs logged</h3><strong>${history.length}</strong><p>Every loss is research.</p></div>`,
+    history: history.length
+      ? `<div class="portal-card"><h3>Recent staring</h3><ul class="portal-list">${history.map((run) => `<li>${run.date}: ${run.time.toFixed(1)}s — ${run.reason}</li>`).join("")}</ul></div>`
+      : `<div class="portal-card"><span class="tiny-eye">👀</span><h3>No history yet</h3><p>Play a round and the eyes will write it down.</p></div>`,
+  };
+  $("portal-title").textContent = titles[view];
+  $("portal-content").innerHTML = views[view];
+  if (view === "leaderboard" && backendEnabled) {
+    getBackendLeaderboard()
+      .then((rows) => {
+        $("portal-content").innerHTML =
+          `<div class="portal-card"><h3>Shared eye legends</h3><ol class="portal-list">${leaderboardList(rows)}</ol></div><div class="portal-card"><h3>Live leaderboard</h3><p>Scores synced through Supabase.</p></div>`;
+      })
+      .catch(() => {
+        $("portal-content").innerHTML =
+          '<div class="portal-card"><h3>Shared leaderboard unavailable</h3><p>Run the latest <code>supabase-schema.sql</code> in your Supabase SQL editor, then reload.</p></div>';
+      });
+  }
+  const play = $("portal-content").querySelector(".portal-play");
+  if (play) play.onclick = () => setView("play");
+}
+function setView(view) {
+  const portalViews = [
+    "dashboard",
+    "collection",
+    "leaderboard",
+    "stats",
+    "history",
+  ];
+  const isPortal = portalViews.includes(view);
+  if (!requireLogin()) return;
+  $("portal").classList.toggle("hidden", !isPortal);
+  document.querySelector("main").classList.toggle("hidden", view !== "play");
+  document
+    .querySelectorAll(".nav-link[data-view]")
+    .forEach((button) =>
+      button.classList.toggle("active", button.dataset.view === view),
+    );
+  if (isPortal) renderPortal(view);
+  if (view === "play") {
+    $("round-label").textContent =
+      mode === "menu" ? "MAIN MENU" : $("round-label").textContent;
+  }
+}
+const unlockLevels = { human: 1, cyclops: 2, anime: 3, alien: 5 };
+function updateEyeLocks() {
+  const reached = getProfile().bestLevel || 0;
+  document.querySelectorAll(".choice").forEach((button) => {
+    const unlocked = reached >= unlockLevels[button.dataset.eye];
+    button.disabled = !unlocked;
+    button.title = unlocked
+      ? "Unlocked"
+      : `Reach level ${unlockLevels[button.dataset.eye]} to unlock`;
+  });
+}
+document
+  .querySelectorAll(".nav-link[data-view]")
+  .forEach((button) => (button.onclick = () => setView(button.dataset.view)));
+$("login-button").onclick = async () => {
+  if (!currentUser) {
+    openAuth("login");
+    return;
+  }
+  try {
+    await logoutBackend();
+  } catch (error) {
+    return status(error.message || "LOGOUT FAILED", "var(--coral)");
+  }
+  currentUser = "";
+  remoteProfile = null;
+  localStorage.removeItem("kk-current-user");
+  updateAuthButton();
+  $("portal").classList.add("hidden");
+  document.querySelector("main").classList.remove("hidden");
+  best();
+  updateEyeLocks();
+  status("LOGGED OUT");
+  openAuth("login");
+};
+$("close-login").onclick = () => $("login-modal").classList.add("hidden");
+$("switch-auth").onclick = () =>
+  openAuth(authMode === "login" ? "register" : "login");
+$("save-login").onclick = async () => {
+  const value = $("player-name").value.trim();
+  const email = $("player-email").value.trim();
+  const password = $("player-password").value;
+  if (!value || !email || password.length < 6)
+    return status(
+      "USERNAME, EMAIL + 6 CHARACTER PASSWORD REQUIRED",
+      "var(--coral)",
+    );
+  if (backendEnabled) {
+    try {
+      remoteProfile =
+        authMode === "register"
+          ? await registerBackend(email, password, value)
+          : await loginBackend(email, password);
+      currentUser = remoteProfile.name;
+      localStorage.setItem("kk-current-user", currentUser);
+    } catch (error) {
+      return status(error.message || "BACKEND LOGIN FAILED", "var(--coral)");
+    }
+  }
+  const users = getUsers();
+  if (authMode === "register") {
+    if (users[value] && !backendEnabled)
+      return status("THAT USERNAME IS TAKEN", "var(--coral)");
+    saveProfile({
+      name: value,
+      password,
+      bestScore: 0,
+      bestLevel: 1,
+      history: [],
+    });
+  } else {
+    if (
+      !backendEnabled &&
+      (!users[value] || users[value].password !== password)
+    )
+      return status("WRONG USERNAME OR PASSWORD", "var(--coral)");
+    saveProfile(users[value]);
+  }
+  $("login-modal").classList.add("hidden");
+  updateAuthButton();
+  updateEyeLocks();
+  renderPortal("dashboard");
+  setView("dashboard");
+};
 async function calibrate() {
   mode = "calibrating";
   $("round-label").textContent = "CALIBRATION";
@@ -276,6 +513,7 @@ async function calibrate() {
   audio(520);
 }
 async function begin() {
+  if (!requireLogin()) return;
   $("start").disabled = true;
   $("start").textContent = "OPENING CAMERA...";
   try {
@@ -328,7 +566,7 @@ function menu() {
   $("gaze-dot").classList.add("hidden");
   $("target").classList.remove("annoyed");
   $("welcome").innerHTML =
-    '<div><div class="eyebrow">കണ്ണും കണ്ണും</div><h2>How long can you keep looking?</h2><p>Camera processing stays in this browser. No video is recorded or uploaded.</p><button class="primary" id="start">START <span aria-hidden="true">→</span></button><button class="ghost" id="style-button">EYE STYLE</button><button class="ghost" id="settings-button">SETTINGS</button></div>';
+    '<div><div class="eyebrow">KANNUM KANNUM</div><h2>How long can you keep looking?</h2><p>Camera processing stays in this browser. No video is recorded or uploaded.</p><button class="primary" id="start">START <span aria-hidden="true">→</span></button><button class="ghost" id="style-button">EYE STYLE</button><button class="ghost" id="settings-button">SETTINGS</button></div>';
   bindMenu();
 }
 function bindMenu() {
@@ -340,6 +578,7 @@ function bindMenu() {
 document.querySelectorAll(".choice").forEach(
   (b) =>
     (b.onclick = () => {
+      if (b.disabled) return;
       style = b.dataset.eye;
       target.dataset.style = style;
       document
@@ -356,4 +595,47 @@ $("close-settings").onclick = () => {
 };
 bindMenu();
 best();
+updateEyeLocks();
+updateAuthButton();
+if (backendEnabled) {
+  // With Supabase enabled, its auth session is the source of truth.
+  currentUser = "";
+  localStorage.removeItem("kk-current-user");
+  updateAuthButton();
+  openAuth("login");
+  currentBackendProfile()
+    .then((profile) => {
+      if (!profile) return;
+      remoteProfile = profile;
+      currentUser = profile.name;
+      localStorage.setItem("kk-current-user", currentUser);
+      updateAuthButton();
+      updateEyeLocks();
+      best();
+      $("login-modal").classList.add("hidden");
+      setView("dashboard");
+    })
+    .catch(() => {});
+} else if (currentUser) {
+  setView("dashboard");
+} else {
+  openAuth("login");
+}
 setInterval(distract, 900);
+document.addEventListener("pointermove", (event) => {
+  document.querySelectorAll(".logo-eye i").forEach((pupil) => {
+    const eye = pupil.parentElement.getBoundingClientRect();
+    const angle = Math.atan2(
+      event.clientY - (eye.top + eye.height / 2),
+      event.clientX - (eye.left + eye.width / 2),
+    );
+    const distance = Math.min(
+      4,
+      Math.hypot(
+        event.clientX - (eye.left + eye.width / 2),
+        event.clientY - (eye.top + eye.height / 2),
+      ) / 80,
+    );
+    pupil.style.transform = `translate(calc(-50% + ${Math.cos(angle) * distance}px), calc(-50% + ${Math.sin(angle) * distance}px))`;
+  });
+});
