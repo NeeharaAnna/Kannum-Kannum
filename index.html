@@ -1,1 +1,18 @@
-
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>കണ്ണും കണ്ണും | Kannum Kannum</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app"><header><div class="brand"><div class="brand-mark" aria-hidden="true"></div><div><div class="brand-name">KANNUM KANNUM</div><div class="malayalam">കണ്ണും കണ്ണും</div></div></div><div class="live mono"><span class="live-dot"></span><span id="connection">SYSTEM READY</span></div></header>
+    <main><section class="intro"><div class="eyebrow">A gaze endurance game / 001</div><h1>DON'T<br><span>LOOK AWAY.</span></h1><p class="intro-copy">Your eyes are the controller. Stare into the center eye while the computer tries very hard to make you curious.</p><div class="rules"><strong>One rule</strong><p>The target never moves. The timer and distractions are bait. Blink or look away and the run ends.</p></div><div class="stats"><div class="stat"><label class="mono">Best run</label><strong id="best-score">0 <small>sec</small></strong></div><div class="stat"><label class="mono">Best level</label><strong id="best-level">0</strong></div></div></section>
+      <section class="stage-wrap"><div class="game-stage" id="stage"><div class="stage-bar"><span class="round mono" id="round-label">MAIN MENU</span><span class="score">SCORE <b id="score">000</b></span></div><div class="timer hidden" id="timer">00:00.00</div><div class="target" id="target" data-style="human"><div class="iris"></div><div class="target-label mono">KEEP LOOKING</div></div><div class="zone hidden" id="zone"></div><div class="gaze-dot hidden" id="gaze-dot"></div><div class="status-line mono" id="status">CAMERA OFF<div class="meter"><div class="meter-fill" id="meter-fill"></div></div></div><div class="camera-preview"><video id="webcam" autoplay muted playsinline></video></div><div class="center-message" id="welcome"><div><div class="eyebrow">കണ്ണും കണ്ണും</div><h2>How long can you keep looking?</h2><p>Camera processing stays in this browser. No video is recorded or uploaded.</p><button class="primary" id="start">START <span aria-hidden="true">→</span></button><button class="ghost" id="style-button">EYE STYLE</button><button class="ghost" id="settings-button">SETTINGS</button></div></div><div class="cal-dot hidden" id="cal-dot"></div><div class="debug hidden" id="debug"></div></div></section></main>
+  </div>
+  <div class="modal hidden" id="style-modal"><div class="modal-card"><div class="eyebrow">Target selection</div><h2>Choose your watcher.</h2><div class="choices"><button class="choice active" data-eye="human"><i class="choice-eye"></i>HUMAN</button><button class="choice" data-eye="cyclops"><i class="choice-eye"></i>CYCLOPS</button><button class="choice" data-eye="anime"><i class="choice-eye"></i>ANIME</button><button class="choice" data-eye="alien"><i class="choice-eye"></i>ALIEN</button></div><div class="modal-actions"><button class="primary" id="close-style">USE THIS EYE</button></div></div></div>
+  <div class="modal hidden" id="settings-modal"><div class="modal-card"><div class="eyebrow">Game settings</div><h2>Dial the pressure.</h2><label class="mono">Look-away tolerance <input id="tolerance-input" type="range" min="700" max="2200" step="100" value="1250"></label><p class="intro-copy">Longer tolerance is kinder. The center target stays fixed either way.</p><label class="mono"><input id="debug-input" type="checkbox"> DEBUG MODE</label><div class="modal-actions"><button class="primary" id="close-settings">DONE</button></div></div></div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>
