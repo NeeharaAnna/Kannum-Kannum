@@ -380,7 +380,7 @@ function renderPortal(view) {
   };
   const views = {
     dashboard: `<div class="portal-card dashboard-welcome"><span class="tiny-eye">👀</span><img class="dashboard-poster" src="gpt-image-2_create_a_funny_doodle_like_logo_with_title_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82-0.jpg" alt="Kannum Kannum poster" /><h3>Hi, ${name}!</h3><p>Your eyes are warmed up. Ready to cause some chaos?</p><button class="primary portal-play" type="button">PLAY NOW →</button></div><div class="portal-card"><h3>Current doodle</h3><p>Best run</p><strong>${bestScore}s</strong><p>Level ${bestLevel} reached. Suspiciously focused.</p></div><div class="portal-card"><h3>Quick links</h3><ul class="portal-list"><li>Collect weird eyes</li><li>Climb the leaderboard</li><li>Prove you can stare</li></ul></div>`,
-    collection: `<div class="portal-card"><span class="tiny-eye">👀</span><h3>Target eyes</h3><p>The game uses one PNG target image so every player focuses on the same eyes.</p></div>`,
+    collection: `<div class="portal-card collection-card"><span class="collection-eye human"><i></i></span><h3>Human</h3><p>Classic watcher. Available from level 1.</p><button class="ghost collection-select" data-collection-eye="human">USE THIS EYE</button></div><div class="portal-card collection-card"><span class="collection-eye cyclops"><i></i></span><h3>Cyclops</h3><p>${bestLevel >= 2 ? "Unlocked. One eye, zero excuses." : "Locked. Reach level 2."}</p><button class="ghost collection-select" data-collection-eye="cyclops" ${bestLevel >= 2 ? "" : "disabled"}>${bestLevel >= 2 ? "USE THIS EYE" : "LEVEL 2"}</button></div><div class="portal-card collection-card"><span class="collection-eye anime"><i></i></span><h3>Anime</h3><p>${bestLevel >= 3 ? "Unlocked. Maximum drama." : "Locked. Reach level 3."}</p><button class="ghost collection-select" data-collection-eye="anime" ${bestLevel >= 3 ? "" : "disabled"}>${bestLevel >= 3 ? "USE THIS EYE" : "LEVEL 3"}</button></div><div class="portal-card collection-card"><span class="collection-eye alien"><i></i></span><h3>Alien</h3><p>${bestLevel >= 5 ? "Unlocked. It has seen things." : "Locked. Reach level 5."}</p><button class="ghost collection-select" data-collection-eye="alien" ${bestLevel >= 5 ? "" : "disabled"}>${bestLevel >= 5 ? "USE THIS EYE" : "LEVEL 5"}</button></div>`,
     leaderboard: `<div class="portal-card"><h3>Local legends</h3><ol class="portal-list">${leaderboardList(getLocalLeaderboard())}</ol></div><div class="portal-card"><h3>Leaderboard rule</h3><p>These scores are from accounts saved in this browser.</p></div>`,
     stats: `<div class="portal-card"><h3>Survival time</h3><strong>${bestScore}s</strong><p>Your longest eye contact.</p></div><div class="portal-card"><h3>Best level</h3><strong>${bestLevel}</strong><p>The eye remembers.</p></div><div class="portal-card"><h3>Runs logged</h3><strong>${history.length}</strong><p>Every loss is research.</p></div>`,
     history: history.length
@@ -402,6 +402,12 @@ function renderPortal(view) {
   }
   const play = $("portal-content").querySelector(".portal-play");
   if (play) play.onclick = () => setView("play");
+  document.querySelectorAll(".collection-select").forEach((button) => {
+    button.onclick = () => {
+      selectEyeStyle(button.dataset.collectionEye);
+      setView("play");
+    };
+  });
 }
 
 function setView(view) {
@@ -652,14 +658,18 @@ document.querySelectorAll(".choice").forEach(
   (button) =>
     (button.onclick = () => {
       if (button.disabled) return;
-      style = button.dataset.eye;
-      target.dataset.style = style;
-      target.querySelector('.iris').style.backgroundImage = '';
-      document
-        .querySelectorAll(".choice")
-        .forEach((choice) => choice.classList.toggle("active", choice === button));
+      selectEyeStyle(button.dataset.eye);
     }),
 );
+
+function selectEyeStyle(nextStyle) {
+  style = nextStyle;
+  target.dataset.style = style;
+  target.querySelector(".iris").style.backgroundImage = "";
+  document
+    .querySelectorAll(".choice")
+    .forEach((choice) => choice.classList.toggle("active", choice.dataset.eye === style));
+}
 
 $("close-style").onclick = () => $("style-modal").classList.add("hidden");
 $("close-settings").onclick = () => {
@@ -770,9 +780,12 @@ let isJumpscaring = false;
 function scheduleMidGameJumpscare() {
   clearTimeout(jumpscareTimer);
   
-  // Trigger early enough to occur in an ordinary successful round, while
+// Trigger early enough to occur in an ordinary successful round, while
   // keeping the exact moment unpredictable.
   const randomDelayMs = 5000 + Math.random() * 3000;
+
+  // Never trigger before 30 seconds; select a random moment from 30–60s.
+//const randomDelayMs = 30000 + Math.random() * 30000;
   
   jumpscareTimer = setTimeout(() => {
     if (document.body.classList.contains('in-game')) {
