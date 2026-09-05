@@ -11,17 +11,28 @@ import {
   registerBackend,
   saveBackendRun,
 } from "./backend.js";
+
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"),
   video = $("webcam"),
   target = $("target");
+
 let landmarker,
   stream,
   raf,
   lastVideo = -1,
   mode = "menu",
   style = "human",
-  baseline = { x: 0.5, y: 0.5, hx: 0, hy: 0 },
+  baseline = {
+    x: 0.5,
+    y: 0.5,
+    hx: 0,
+    hy: 0,
+    xTolerance: 0.006,
+    yTolerance: 0.006,
+    hxTolerance: 0.03,
+    hyTolerance: 0.03,
+  },
   lastRaw = null,
   wrongSince = 0,
   blinkSince = 0,
@@ -35,7 +46,9 @@ let landmarker,
   debugMode = false,
   currentUser = localStorage.getItem("kk-current-user") || "",
   authMode = "register";
+
 let remoteProfile = null;
+
 const messages = [
   "LOOK LEFT.",
   "HEY, WHAT'S THAT?",
@@ -46,18 +59,22 @@ const messages = [
   "LOOK DOWN.",
   "Something is behind you.",
 ];
+
 function status(text, color = "var(--muted)") {
   $("status").firstChild.textContent = text;
   $("status").style.color = color;
 }
+
 function best() {
   const profile = getProfile();
   $("best-score").innerHTML = `${profile.bestScore || 0} <small>sec</small>`;
   $("best-level").textContent = profile.bestLevel || 0;
 }
+
 function getUsers() {
   return JSON.parse(localStorage.getItem("kk-users") || "{}");
 }
+
 function getProfile() {
   if (remoteProfile) return remoteProfile;
   const users = getUsers();
@@ -71,6 +88,7 @@ function getProfile() {
     }
   );
 }
+
 function saveProfile(profile) {
   const users = getUsers();
   users[profile.name] = profile;
@@ -78,6 +96,7 @@ function saveProfile(profile) {
   currentUser = profile.name;
   localStorage.setItem("kk-current-user", currentUser);
 }
+
 function getLocalLeaderboard() {
   return Object.values(getUsers())
     .map((profile) => ({
@@ -93,6 +112,7 @@ function getLocalLeaderboard() {
     )
     .slice(0, 25);
 }
+
 function leaderboardList(rows) {
   if (!rows.length) return "<li>No scores yet. Play a round to join.</li>";
   return rows
@@ -102,17 +122,20 @@ function leaderboardList(rows) {
     )
     .join("");
 }
+
 function updateAuthButton() {
   const button = $("login-button");
   const loggedIn = Boolean(currentUser);
   button.textContent = loggedIn ? "LOGOUT" : "LOGIN";
   button.setAttribute("aria-label", loggedIn ? "Log out" : "Log in");
 }
+
 function requireLogin() {
   if (currentUser) return true;
   openAuth("login");
   return false;
 }
+
 function openAuth(nextMode = "login") {
   authMode = nextMode;
   $("login-modal").classList.remove("hidden");
@@ -125,6 +148,7 @@ function openAuth(nextMode = "login") {
   $("switch-auth").textContent =
     nextMode === "login" ? "CREATE NEW ACCOUNT" : "I HAVE AN ACCOUNT";
 }
+
 function rawGaze(result) {
   if (!result.faceLandmarks?.length) return null;
   const face = result.faceLandmarks[0];
@@ -171,6 +195,7 @@ function rawGaze(result) {
     },
   };
 }
+
 function detect() {
   if (video.readyState >= 2 && video.currentTime !== lastVideo) {
     lastVideo = video.currentTime;
@@ -181,7 +206,8 @@ function detect() {
         if (!wasBlinking) blinks++;
       }
       wasBlinking = true;
-      if (mode === "playing") gameOver("BLINKING DETECTED");
+      if (mode === "playing" && !isJumpscaring)
+        gameOver("BLINKING DETECTED");
     } else if (sample) {
       blinkSince = 0;
       wasBlinking = false;
@@ -219,25 +245,31 @@ function detect() {
       };
       $("gaze-dot").style.left = `${screen.x * 100}%`;
       $("gaze-dot").style.top = `${screen.y * 100}%`;
-      if (
-        mode === "playing" &&
-        (lastRaw.y < baseline.y - 0.008 || lastRaw.hy < baseline.hy - 0.03)
-      )
-        gameOver("GAZE ABOVE THE EYE");
-      else if (mode === "playing") checkGaze(screen);
+      if (mode === "playing" && !isJumpscaring) checkGaze();
       if (debugMode)
         $("debug").innerHTML =
           `GAZE: ${screen.x < 0.4 ? "LEFT" : screen.x > 0.6 ? "RIGHT" : screen.y < 0.4 ? "UP" : screen.y > 0.6 ? "DOWN" : "CENTER"}<br>IRIS X: ${lastRaw.x.toFixed(3)}<br>IRIS Y: ${lastRaw.y.toFixed(3)}<br>HEAD X: ${lastRaw.hx.toFixed(3)}<br>HEAD Y: ${lastRaw.hy.toFixed(3)}<br>EYES: OPEN<br>ZONE: ${mode === "playing" && !wrongSince ? "SAFE" : "WATCHING"}<br>LOOK-AWAY: ${wrongSince ? ((Date.now() - wrongSince) / 1000).toFixed(1) + "s" : "0.0s"}`;
-    } else if (mode === "playing") {
+    } else if (mode === "playing" && !isJumpscaring) {
       if (!blinkSince) blinkSince = Date.now();
       if (Date.now() - blinkSince > 1800) gameOver("FACE TRACKING LOST");
     }
   }
   raf = requestAnimationFrame(detect);
 }
-function checkGaze(gaze) {
-  const distance = Math.hypot(gaze.x - 0.5, gaze.y - 0.5),
-    limit = Math.max(0.075, 0.12 - level * 0.004),
+
+function checkGaze() {
+  // Compare against the player's calibration rather than a generic screen
+  // radius. This keeps the center-eye requirement strict but personal.
+  const gazeDistance = Math.hypot(
+      (lastRaw.x - baseline.x) / baseline.xTolerance,
+      (lastRaw.y - baseline.y) / baseline.yTolerance,
+    ),
+    headDistance = Math.hypot(
+      (lastRaw.hx - baseline.hx) / baseline.hxTolerance,
+      (lastRaw.hy - baseline.hy) / baseline.hyTolerance,
+    ),
+    limit = Math.max(0.62, 1 - (level - 1) * 0.045),
+    distance = Math.max(gazeDistance, headDistance),
     ok = distance < limit;
   const elapsed = (Date.now() - startedAt) / 1000;
   $("timer").textContent =
@@ -261,6 +293,7 @@ function checkGaze(gaze) {
     $("round-label").textContent = `LEVEL ${level}`;
   }
 }
+
 function distract() {
   if (mode !== "playing" || Date.now() - lastDistraction < 3200) return;
   const elapsed = (Date.now() - startedAt) / 1000;
@@ -277,9 +310,10 @@ function distract() {
   setTimeout(() => d.remove(), Math.min(4200, 1800 + level * 230));
   setTimeout(() => stage.classList.remove("screen-flash"), 450);
 }
+
 function audio(pitch = 320) {
   try {
-    const c = new AudioContext(),
+    const c = getAudioContext(),
       o = c.createOscillator(),
       g = c.createGain();
     o.frequency.value = pitch;
@@ -290,9 +324,15 @@ function audio(pitch = 320) {
     o.stop(c.currentTime + 0.18);
   } catch {}
 }
+
 function gameOver(reason) {
   if (mode !== "playing") return;
   mode = "over";
+
+  // Cleanup jumpscare state
+  document.body.classList.remove('in-game');
+  clearTimeout(jumpscareTimer);
+
   target.classList.add("annoyed");
   $("timer").classList.add("hidden");
   $("zone").classList.add("hidden");
@@ -324,6 +364,7 @@ function gameOver(reason) {
   };
   $("menu").onclick = menu;
 }
+
 function renderPortal(view) {
   const profile = getProfile();
   const name = profile.name || "Anonymous Eye";
@@ -339,7 +380,7 @@ function renderPortal(view) {
   };
   const views = {
     dashboard: `<div class="portal-card dashboard-welcome"><span class="tiny-eye">👀</span><img class="dashboard-poster" src="gpt-image-2_create_a_funny_doodle_like_logo_with_title_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82_%E0%B4%95%E0%B4%A3%E0%B5%8D%E0%B4%A3%E0%B5%81%E0%B4%82-0.jpg" alt="Kannum Kannum poster" /><h3>Hi, ${name}!</h3><p>Your eyes are warmed up. Ready to cause some chaos?</p><button class="primary portal-play" type="button">PLAY NOW →</button></div><div class="portal-card"><h3>Current doodle</h3><p>Best run</p><strong>${bestScore}s</strong><p>Level ${bestLevel} reached. Suspiciously focused.</p></div><div class="portal-card"><h3>Quick links</h3><ul class="portal-list"><li>Collect weird eyes</li><li>Climb the leaderboard</li><li>Prove you can stare</li></ul></div>`,
-    collection: `<div class="portal-card"><span class="tiny-eye">👁</span><h3>Human</h3><p>Classic watcher. Unlocked at level 1.</p></div><div class="portal-card"><span class="tiny-eye">◉</span><h3>Cyclops</h3><p>${bestLevel >= 2 ? "Unlocked! One eye. Zero excuses." : "Locked. Reach level 2."}</p></div><div class="portal-card"><span class="tiny-eye">✦</span><h3>Anime / Alien</h3><p>Anime: level 3. Alien: level 5.</p></div>`,
+    collection: `<div class="portal-card"><span class="tiny-eye">👀</span><h3>Target eyes</h3><p>The game uses one PNG target image so every player focuses on the same eyes.</p></div>`,
     leaderboard: `<div class="portal-card"><h3>Local legends</h3><ol class="portal-list">${leaderboardList(getLocalLeaderboard())}</ol></div><div class="portal-card"><h3>Leaderboard rule</h3><p>These scores are from accounts saved in this browser.</p></div>`,
     stats: `<div class="portal-card"><h3>Survival time</h3><strong>${bestScore}s</strong><p>Your longest eye contact.</p></div><div class="portal-card"><h3>Best level</h3><strong>${bestLevel}</strong><p>The eye remembers.</p></div><div class="portal-card"><h3>Runs logged</h3><strong>${history.length}</strong><p>Every loss is research.</p></div>`,
     history: history.length
@@ -362,6 +403,7 @@ function renderPortal(view) {
   const play = $("portal-content").querySelector(".portal-play");
   if (play) play.onclick = () => setView("play");
 }
+
 function setView(view) {
   const portalViews = [
     "dashboard",
@@ -385,6 +427,7 @@ function setView(view) {
       mode === "menu" ? "MAIN MENU" : $("round-label").textContent;
   }
 }
+
 const unlockLevels = { human: 1, cyclops: 2, anime: 3, alien: 5 };
 function updateEyeLocks() {
   const reached = getProfile().bestLevel || 0;
@@ -396,9 +439,11 @@ function updateEyeLocks() {
       : `Reach level ${unlockLevels[button.dataset.eye]} to unlock`;
   });
 }
+
 document
   .querySelectorAll(".nav-link[data-view]")
   .forEach((button) => (button.onclick = () => setView(button.dataset.view)));
+
 $("login-button").onclick = async () => {
   if (!currentUser) {
     openAuth("login");
@@ -420,9 +465,11 @@ $("login-button").onclick = async () => {
   status("LOGGED OUT");
   openAuth("login");
 };
+
 $("close-login").onclick = () => $("login-modal").classList.add("hidden");
 $("switch-auth").onclick = () =>
   openAuth(authMode === "login" ? "register" : "login");
+
 $("save-login").onclick = async () => {
   const value = $("player-name").value.trim();
   const email = $("player-email").value.trim();
@@ -469,6 +516,7 @@ $("save-login").onclick = async () => {
   renderPortal("dashboard");
   setView("dashboard");
 };
+
 async function calibrate() {
   mode = "calibrating";
   $("round-label").textContent = "CALIBRATION";
@@ -479,8 +527,9 @@ async function calibrate() {
   dot.style.top = "50%";
   status("LOOK DIRECTLY AT THE CENTER");
   let sum = { x: 0, y: 0, hx: 0, hy: 0 },
+    sumSquares = { x: 0, y: 0, hx: 0, hy: 0 },
     samples = 0;
-  await new Promise((r) => setTimeout(r, 700));
+  await new Promise((resolve) => setTimeout(resolve, 700));
   const end = Date.now() + 2200;
   while (Date.now() < end) {
     if (lastRaw) {
@@ -488,16 +537,31 @@ async function calibrate() {
       sum.y += lastRaw.y;
       sum.hx += lastRaw.hx;
       sum.hy += lastRaw.hy;
+      sumSquares.x += lastRaw.x ** 2;
+      sumSquares.y += lastRaw.y ** 2;
+      sumSquares.hx += lastRaw.hx ** 2;
+      sumSquares.hy += lastRaw.hy ** 2;
       samples++;
     }
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   dot.classList.add("hidden");
+  const average = (value, fallback) => (samples ? value / samples : fallback);
+  const spread = (value, squared) =>
+    samples
+      ? Math.sqrt(Math.max(0, squared / samples - (value / samples) ** 2))
+      : 0;
   baseline = {
-    x: samples ? sum.x / samples : 0.5,
-    y: samples ? sum.y / samples : 0.5,
-    hx: samples ? sum.hx / samples : 0,
-    hy: samples ? sum.hy / samples : 0,
+    x: average(sum.x, 0.5),
+    y: average(sum.y, 0.5),
+    hx: average(sum.hx, 0),
+    hy: average(sum.hy, 0),
+    // Four standard deviations absorb normal webcam noise without allowing a
+    // deliberate glance away from the center eye.
+    xTolerance: Math.max(0.006, spread(sum.x, sumSquares.x) * 4),
+    yTolerance: Math.max(0.006, spread(sum.y, sumSquares.y) * 4),
+    hxTolerance: Math.max(0.03, spread(sum.hx, sumSquares.hx) * 4),
+    hyTolerance: Math.max(0.03, spread(sum.hy, sumSquares.hy) * 4),
   };
   mode = "playing";
   startedAt = Date.now();
@@ -505,6 +569,11 @@ async function calibrate() {
   blinks = 0;
   wasBlinking = false;
   wrongSince = 0;
+
+  // Set active game state and trigger mid-game jumpscare timer
+  document.body.classList.add('in-game');
+  scheduleMidGameJumpscare();
+
   $("timer").classList.remove("hidden");
   $("zone").classList.remove("hidden");
   $("gaze-dot").classList.remove("hidden");
@@ -512,6 +581,7 @@ async function calibrate() {
   status("HOLD YOUR GAZE");
   audio(520);
 }
+
 async function begin() {
   if (!requireLogin()) return;
   $("start").disabled = true;
@@ -557,6 +627,7 @@ async function begin() {
     $("start").textContent = "TRY CAMERA AGAIN →";
   }
 }
+
 function menu() {
   mode = "menu";
   $("welcome").classList.remove("hidden");
@@ -569,23 +640,27 @@ function menu() {
     '<div><div class="eyebrow">KANNUM KANNUM</div><h2>How long can you keep looking?</h2><p>Camera processing stays in this browser. No video is recorded or uploaded.</p><button class="primary" id="start">START <span aria-hidden="true">→</span></button><button class="ghost" id="style-button">EYE STYLE</button><button class="ghost" id="settings-button">SETTINGS</button></div>';
   bindMenu();
 }
+
 function bindMenu() {
   $("start").onclick = begin;
   $("style-button").onclick = () => $("style-modal").classList.remove("hidden");
   $("settings-button").onclick = () =>
     $("settings-modal").classList.remove("hidden");
 }
+
 document.querySelectorAll(".choice").forEach(
-  (b) =>
-    (b.onclick = () => {
-      if (b.disabled) return;
-      style = b.dataset.eye;
+  (button) =>
+    (button.onclick = () => {
+      if (button.disabled) return;
+      style = button.dataset.eye;
       target.dataset.style = style;
+      target.querySelector('.iris').style.backgroundImage = '';
       document
         .querySelectorAll(".choice")
-        .forEach((x) => x.classList.toggle("active", x === b));
+        .forEach((choice) => choice.classList.toggle("active", choice === button));
     }),
 );
+
 $("close-style").onclick = () => $("style-modal").classList.add("hidden");
 $("close-settings").onclick = () => {
   toleranceMs = +$("tolerance-input").value;
@@ -593,12 +668,13 @@ $("close-settings").onclick = () => {
   $("debug").classList.toggle("hidden", !debugMode);
   $("settings-modal").classList.add("hidden");
 };
+
 bindMenu();
 best();
 updateEyeLocks();
 updateAuthButton();
+
 if (backendEnabled) {
-  // With Supabase enabled, its auth session is the source of truth.
   currentUser = "";
   localStorage.removeItem("kk-current-user");
   updateAuthButton();
@@ -621,7 +697,9 @@ if (backendEnabled) {
 } else {
   openAuth("login");
 }
+
 setInterval(distract, 900);
+
 document.addEventListener("pointermove", (event) => {
   document.querySelectorAll(".logo-eye i").forEach((pupil) => {
     const eye = pupil.parentElement.getBoundingClientRect();
@@ -638,4 +716,152 @@ document.addEventListener("pointermove", (event) => {
     );
     pupil.style.transform = `translate(calc(-50% + ${Math.cos(angle) * distance}px), calc(-50% + ${Math.sin(angle) * distance}px))`;
   });
+});
+
+// ==========================================
+// AUDIO CONTEXT MANAGER & JUMPSCARE AUDIO
+// ==========================================
+let audioCtx = null;
+let scareAudioBuffer = null;
+
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContextClass();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+// Unlock Web Audio policy on the player's first gesture
+document.addEventListener('click', () => {
+  getAudioContext();
+}, { once: true });
+
+async function loadScareAudio() {
+  try {
+    const response = await fetch('assets/jumpscare.mp3');
+    const arrayBuffer = await response.arrayBuffer();
+    const ctx = getAudioContext();
+    scareAudioBuffer = await ctx.decodeAudioData(arrayBuffer);
+  } catch (err) {
+    console.warn('Scare audio failed to load:', err);
+  }
+}
+loadScareAudio();
+
+function playScareSound() {
+  if (!scareAudioBuffer) return;
+  const ctx = getAudioContext();
+  const source = ctx.createBufferSource();
+  source.buffer = scareAudioBuffer;
+  source.connect(ctx.destination);
+  source.start(0);
+}
+
+// ==========================================
+// MID-GAME RANDOM JUMPSCARE CONTROLLER
+// ==========================================
+let jumpscareTimer = null;
+let isJumpscaring = false;
+
+function scheduleMidGameJumpscare() {
+  clearTimeout(jumpscareTimer);
+  
+  // Trigger early enough to occur in an ordinary successful round, while
+  // keeping the exact moment unpredictable.
+  const randomDelayMs = 5000 + Math.random() * 3000;
+  
+  jumpscareTimer = setTimeout(() => {
+    if (document.body.classList.contains('in-game')) {
+      // The scare is only a distraction. It does not automatically end a
+      // round; normal blink and gaze checks resume when it disappears.
+      triggerJumpscare();
+    }
+  }, randomDelayMs);
+}
+
+function triggerJumpscare(callback) {
+  if (isJumpscaring) return;
+  isJumpscaring = true;
+
+  const overlay = document.getElementById('jumpscare-overlay');
+  const eyeContainer = document.getElementById('jumpscare-eye-container');
+  const activeTarget = document.querySelector('.stage-wrap .target');
+
+  if (eyeContainer && activeTarget) {
+    eyeContainer.innerHTML = '';
+    const clonedEye = activeTarget.cloneNode(true);
+    eyeContainer.appendChild(clonedEye);
+  }
+
+  playScareSound();
+
+  if (overlay) {
+    overlay.classList.remove('jumpscare-hidden');
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+
+  setTimeout(() => {
+    if (overlay) {
+      overlay.classList.remove('active');
+      overlay.classList.add('jumpscare-hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+    if (eyeContainer) {
+      eyeContainer.innerHTML = '';
+    }
+    isJumpscaring = false;
+    if (typeof callback === 'function') callback();
+  }, 850);
+}
+
+// Global hook for debugging in browser console (F12)
+window.triggerJumpscare = triggerJumpscare;
+
+// ==========================================
+// CUSTOM EYE UPLOAD & SHARE HANDLERS
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+  const eyeInput = document.getElementById('custom-eye-input');
+  if (eyeInput) {
+    eyeInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        const iris = target.querySelector('.iris');
+        if (!iris) return;
+        style = 'custom';
+        target.dataset.style = style;
+        iris.style.backgroundImage = `url(${loadEvent.target.result})`;
+        iris.style.backgroundSize = 'cover';
+        iris.style.backgroundPosition = 'center';
+        document
+          .querySelectorAll('.choice')
+          .forEach((choice) => choice.classList.remove('active'));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const shareBtn = document.getElementById('btn-share-run');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', () => {
+      const score = document.getElementById('final-score')?.innerText || '0';
+      if (navigator.share) {
+        navigator.share({
+          title: 'Kannum-Kannum Gaze Challenge',
+          text: `I scored ${score} points before jumping out of my seat in Kannum-Kannum! Can you beat me?`,
+          url: window.location.href
+        }).catch(() => {});
+      } else {
+        navigator.clipboard.writeText(`I scored ${score} in Kannum-Kannum! Try it here: ${window.location.href}`);
+        alert('Score copied to clipboard!');
+      }
+    });
+  }
 });
